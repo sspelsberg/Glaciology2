@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[206]:
-
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -122,8 +117,6 @@ print("Lake Volume 2015: ", v_lake_2015, "*10^6 m3")
 print("Lake Volume 2023: ", v_lake_2023, "*10^6 m3")
 print("-"*25)
 
-
-# In[ ]:
 
 
 
