@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[206]:
+
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -68,19 +73,37 @@ dem_lake_depth_2015 = dem_elev_diff_2015 * mask_lake_2015
 dem_lake_depth_2023 = dem_elev_diff_2023 * mask_lake_2023
 
 # compute lake volume - gets positive due to negative res_y
-v_lake_2004 = dem_lake_depth_2004.sum() * res_x * res_y
-v_lake_2015 = dem_lake_depth_2015.sum() * res_x * res_y
-v_lake_2023 = dem_lake_depth_2023.sum() * res_x * res_y
+v_lake_2004 = round(dem_lake_depth_2004.sum() * res_x * res_y / (10**6), ndigits=4)
+v_lake_2015 = round(dem_lake_depth_2015.sum() * res_x * res_y / (10**6), ndigits=4)
+v_lake_2023 = round(dem_lake_depth_2023.sum() * res_x * res_y / (10**6), ndigits=4)
 
+# compute glacier mask
+dem_thinning = lake_2004 - lake_2023
+# thinning treshhold of 3 meters accounts for height uncertainties and delivers better visual result than 0
+mask_glacier = (np.where(dem_thinning >= 3, 1, 0)) 
 
-# plot lake area
+# for plotting: remove cells outside of lake
+dem_lake_depth_2004[mask_lake_2004 == 0] = np.nan
+dem_lake_depth_2015[mask_lake_2015 == 0] = np.nan
+dem_lake_depth_2023[mask_lake_2023 == 0] = np.nan
+
+# plot lake area and depth
 fig, axs = plt.subplots(nrows=1, ncols=3, sharey=True, sharex=True, figsize=(12, 6))
-axs[0].imshow(dem_lake_depth_2004, cmap="Blues_r")
-axs[1].imshow(dem_lake_depth_2015, cmap="Blues_r")
-im = axs[2].imshow(dem_lake_depth_2023, cmap="Blues_r")
-axs[0].contour(mask_lake_2004, levels=[0.5], colors='black', linestyles='solid', linewidths=1)
-axs[1].contour(mask_lake_2015, levels=[0.5], colors='black', linestyles='solid', linewidths=1)
-axs[2].contour(mask_lake_2023, levels=[0.5], colors='black', linestyles='solid', linewidths=1)
+cmap_terrain = matplotlib.colors.LinearSegmentedColormap.from_list("", ["greenyellow", "darkgreen", "khaki", "sienna", "saddlebrown"])
+im1 = axs[0].imshow(lake_2004, cmap=cmap_terrain, alpha=0.8, vmin= 2500, vmax = 2850)
+im2 = axs[1].imshow(lake_2015, cmap=cmap_terrain, alpha=0.8, vmin= 2500, vmax = 2850)
+im3 = axs[2].imshow(lake_2023, cmap=cmap_terrain, alpha=0.8, vmin= 2500, vmax = 2850)
+im4 = axs[0].imshow(dem_lake_depth_2004, cmap="Blues_r", vmin= -65, vmax = 0) # adjust all grids to use the same colorbar
+im5 = axs[1].imshow(dem_lake_depth_2015, cmap="Blues_r", vmin= -65, vmax = 0)
+im6 = axs[2].imshow(dem_lake_depth_2023, cmap="Blues_r", vmin= -65, vmax = 0)
+axs[0].contour(mask_lake_2004, levels=[0.5], colors='blue', linestyles='solid', linewidths=1)
+axs[1].contour(mask_lake_2015, levels=[0.5], colors='blue', linestyles='solid', linewidths=1)
+axs[2].contour(mask_lake_2023, levels=[0.5], colors='blue', linestyles='solid', linewidths=1)
+axs[0].contour(mask_glacier, levels=[0.5], colors='black', linestyles='solid', linewidths=1)
+axs[1].contour(mask_glacier, levels=[0.5], colors='black', linestyles='solid', linewidths=1)
+axs[2].contour(mask_glacier, levels=[0.5], colors='black', linestyles='solid', linewidths=1)
+# insert here: code to hatch the rock area
+# axs[0].contourf(mask_glacier, levels=..., colors="None", hatches=["xx", None])
 axs[0].set_title("Lake Area 2004")
 axs[1].set_title("Lake Area 2015")
 axs[2].set_title("Lake Area 2023")
@@ -88,13 +111,20 @@ axs[0].set_ylabel("# Cells")
 axs[0].set_xlabel("# Cells")
 axs[1].set_xlabel("# Cells")
 axs[2].set_xlabel("# Cells")
-fig.colorbar(im, ax=axs, orientation='vertical', label="Lake depth [m]")
+fig.colorbar(im6, ax=axs, orientation='vertical', label="Lake depth [m]")
+fig.colorbar(im3, ax=axs, orientation='vertical', label="Elevation around lake area [m]")
 
 
 print("-"*8, "RESULTS", "-"*8)
 print()
-print("Lake Volume 2004: ", v_lake_2004, " m3")
-print("Lake Volume 2015: ", v_lake_2015, " m3")
-print("Lake Volume 2023: ", v_lake_2023, " m3")
+print("Lake Volume 2004: ", v_lake_2004, "*10^6 m3")
+print("Lake Volume 2015: ", v_lake_2015, "*10^6 m3")
+print("Lake Volume 2023: ", v_lake_2023, "*10^6 m3")
 print("-"*25)
+
+
+# In[ ]:
+
+
+
 
