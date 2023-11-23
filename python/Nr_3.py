@@ -27,13 +27,13 @@ import math
 
 
 # Open rasters and masks
-with rio.open('data_raw/lake_dem_2004.asc') as src1:
+with rio.open('/home/carletti/Projects/ETH/Glaciology2/data_raw/lake_dem_2004.asc') as src1:
     lake_2004 = src1.read(1)
 
-with rio.open('data_raw/lake_dem_2015.asc') as src2:
+with rio.open('/home/carletti/Projects/ETH/Glaciology2/data_raw/lake_dem_2015.asc') as src2:
     lake_2015 = src2.read(1)
 
-with rio.open('data_raw/lake_dem_2023.asc') as src3:
+with rio.open('/home/carletti/Projects/ETH/Glaciology2/data_raw/lake_dem_2023.asc') as src3:
     lake_2023 = src3.read(1)
 
 # Spillway data
@@ -203,8 +203,8 @@ axs[0].set_ylabel("# Cells")
 axs[0].set_xlabel("# Cells")
 axs[1].set_xlabel("# Cells")
 axs[2].set_xlabel("# Cells")
-fig.colorbar(im6, ax=axs, orientation='vertical', label="Lake depth [m]")
-fig.colorbar(im3, ax=axs, orientation='vertical', label="Elevation around lake area [m]")
+fig.colorbar(im6, ax=axs, orientation='vertical', label="Lake depth [m]", shrink=1.0)
+fig.colorbar(im3, ax=axs, orientation='vertical', label="Elevation around lake area [m]",  shrink=1.0)
 plt.savefig("Glaciology2/plots/lake_depth.png", dpi=300)
 plt.show()
 
