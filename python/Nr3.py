@@ -9,31 +9,17 @@ from matplotlib.patches import Patch
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import re
 import math
-
-
-# Questions to be answered: 
-#
-# 1) nr 3.1 – which threshhold should we use to distinguish glacier and rock? 
-#  --> 3 m thinning works quite well, > 0 m thinning is too patchy probably due to snow cover
-# 
-# 2) nr 3.3 – Interpolation of the lake: which lake surface elevation should we assume for the predictions of lake volume?
-#  --> possible: spillway location remains the same --> surface elevation = future spillway elevation?
-# 
-# 3) nr 3.3 – should we somehow account for glacier retreat? 
-# 
-# nr 3.3 not finished
-# nr 3.1: shrink color bars
-
+from scipy.optimize import curve_fit
 
 
 # Open rasters and masks
-with rio.open('/home/carletti/Projects/ETH/Glaciology2/data_raw/lake_dem_2004.asc') as src1:
+with rio.open('data_raw/lake_dem_2004.asc') as src1:
     lake_2004 = src1.read(1)
 
-with rio.open('/home/carletti/Projects/ETH/Glaciology2/data_raw/lake_dem_2015.asc') as src2:
+with rio.open('data_raw/lake_dem_2015.asc') as src2:
     lake_2015 = src2.read(1)
 
-with rio.open('/home/carletti/Projects/ETH/Glaciology2/data_raw/lake_dem_2023.asc') as src3:
+with rio.open('data_raw/lake_dem_2023.asc') as src3:
     lake_2023 = src3.read(1)
 
 # Spillway data
@@ -77,9 +63,9 @@ dem_elev_diff_2015 = lake_2015 - spillways["elevation"][1]
 dem_elev_diff_2023 = lake_2023 - spillways["elevation"][2]
 
 # create lake mask (only areas below 0) 
-mask_lake_2004 = (np.where(dem_elev_diff_2004 <= 0, 1, 0))
-mask_lake_2015 = (np.where(dem_elev_diff_2015 <= 0, 1, 0))
-mask_lake_2023 = (np.where(dem_elev_diff_2023 <= 0, 1, 0))
+mask_lake_2004 = (np.where(dem_elev_diff_2004 < 0, 1, 0))
+mask_lake_2015 = (np.where(dem_elev_diff_2015 < 0, 1, 0))
+mask_lake_2023 = (np.where(dem_elev_diff_2023 < 0, 1, 0))
 
 # create dems with lake depth - negative
 dem_lake_depth_2004 = dem_elev_diff_2004 * mask_lake_2004
@@ -97,7 +83,7 @@ v_lake_2023 = round(dem_lake_depth_2023.sum() * res_x * res_y / (10**6), ndigits
 # GLACIER -------------------------------
 
 # compute thinning
-dem_thinning_2004 = lake_2023 - lake_2004 
+dem_thinning_2004 = lake_2015 - lake_2004 
 dem_thinning_2015 = lake_2023 - lake_2015
 dem_thinning_rate = dem_thinning_2015 / (2023-2015) # m/yr
 
@@ -112,7 +98,7 @@ mask_glacier_lake = (np.where((mask_glacier_2015 == 1) & (mask_lake_2023 == 1), 
 mask_rock = (np.where(mask_glacier_2015 == 0, 1, 0))
 
 # compute thinning rates for glacier below lake and glacier
-thinning_rate_lake = (dem_thinning_rate * mask_glacier_lake).sum() / mask_glacier_lake.sum() # - m/yr
+thinning_rate_lake = (dem_thinning_rate * mask_lake_2023).sum() / mask_lake_2023.sum() # - m/yr
 thinning_rate_glacier = (dem_thinning_rate * mask_glacier_no_lake).sum() / mask_glacier_no_lake.sum() # - m/yr
 
 
@@ -120,7 +106,8 @@ thinning_rate_glacier = (dem_thinning_rate * mask_glacier_no_lake).sum() / mask_
 # PREDICT FUTURE LAKE VOLUME -------------------
 
 # compute future dems with thinning in glacier areas 
-# all based on lake area 2023. should we use future lake areas for the mask of the lake?
+# lake extents are the same outside the rock. 
+# therefore no use of future lake areas for the mask of the lake necessary
 def get_future_dem(year):
     n_years = year - 2023
     dem_rock = lake_2023 * mask_rock
@@ -149,9 +136,9 @@ dem_elev_diff_2027 = lake_2027 - spillways["elevation"][4]
 dem_elev_diff_2032 = lake_2032 - spillways["elevation"][5]
 
 # create lake mask (only areas below 0) 
-mask_lake_2024 = (np.where(dem_elev_diff_2024 <= 0, 1, 0))
-mask_lake_2027 = (np.where(dem_elev_diff_2027 <= 0, 1, 0))
-mask_lake_2032 = (np.where(dem_elev_diff_2032 <= 0, 1, 0))
+mask_lake_2024 = (np.where(dem_elev_diff_2024 < 0, 1, 0))
+mask_lake_2027 = (np.where(dem_elev_diff_2027 < 0, 1, 0))
+mask_lake_2032 = (np.where(dem_elev_diff_2032 < 0, 1, 0))
 
 # create dems with lake depth - negative
 dem_lake_depth_2024 = dem_elev_diff_2024 * mask_lake_2024
@@ -165,6 +152,33 @@ v_lake_2032 = round(dem_lake_depth_2032.sum() * res_x * res_y / (10**6), ndigits
 
 
 
+# FIT CLAGUE MATHEWS RELATIONSHIP --------------
+
+# clague mathews relation
+def clague_mathews(Vol, k):
+    Q = k * (Vol ** (2/3))
+    return Q
+
+Vol = np.array([v_lake_2004, v_lake_2015, v_lake_2023])  # predictor
+Qmax = np.array(spillways["peak discharge"][0:3]) # target
+
+# model fitting
+k_opt, k_cov = curve_fit(clague_mathews, Vol, Qmax)
+
+# Compute values for the fitted curve
+x_model = np.linspace(min(Vol)-0.5, max(Vol)+2, 50)
+y_model = clague_mathews(x_model, k_opt)
+
+# Predict discharge 2024, 27 and 32
+Vol_future = np.array([v_lake_2024, v_lake_2027, v_lake_2032])
+Q_future = clague_mathews(Vol_future, k_opt)
+
+# add data to spillways dataframe
+Q_future = np.round(Q_future, 3)
+spillways["peak discharge"][3:] = Q_future
+
+
+
 # PLOTS & RESULTS ----------------------
 
 # for plotting: remove cells outside of lake
@@ -175,8 +189,9 @@ dem_lake_depth_2024[mask_lake_2024 == 0] = np.nan
 dem_lake_depth_2027[mask_lake_2027 == 0] = np.nan
 dem_lake_depth_2032[mask_lake_2032 == 0] = np.nan
 
-# for plotting: remove glacierized cells
+# for plotting the rock area: remove glacierized cells
 dem_elev_diff_2004[mask_glacier_2004 == 1] = np.nan
+dem_elev_diff_2015[mask_glacier_2015 == 1] = np.nan
 
 # plot lake area and depth
 fig, axs = plt.subplots(nrows=1, ncols=3, sharey=True, sharex=True, figsize=(12, 6))
@@ -185,17 +200,17 @@ im1 = axs[0].imshow(lake_2004, cmap=cmap_terrain, alpha=0.8, vmin= 2450, vmax = 
 im2 = axs[1].imshow(lake_2015, cmap=cmap_terrain, alpha=0.8, vmin= 2450, vmax = 2850)
 im3 = axs[2].imshow(lake_2023, cmap=cmap_terrain, alpha=0.8, vmin= 2450, vmax = 2850)
 axs[0].contourf(dem_elev_diff_2004, colors="white", hatches=["..."], alpha=0) # hatching of rock area
-axs[1].contourf(dem_elev_diff_2004, colors="white", hatches=["..."], alpha=0)
-axs[2].contourf(dem_elev_diff_2004, colors="white", hatches=["..."], alpha=0)
+axs[1].contourf(dem_elev_diff_2015, colors="white", hatches=["..."], alpha=0)
+axs[2].contourf(dem_elev_diff_2015, colors="white", hatches=["..."], alpha=0)
 im4 = axs[0].imshow(dem_lake_depth_2004, cmap="Blues_r", vmin= -65, vmax = 0) # adjust all grids to use the same colorbar
 im5 = axs[1].imshow(dem_lake_depth_2015, cmap="Blues_r", vmin= -65, vmax = 0)
 im6 = axs[2].imshow(dem_lake_depth_2023, cmap="Blues_r", vmin= -65, vmax = 0)
 axs[0].contour(mask_lake_2004, levels=[0.5], colors='blue', linestyles='solid', linewidths=1)
 axs[1].contour(mask_lake_2015, levels=[0.5], colors='blue', linestyles='solid', linewidths=1)
 axs[2].contour(mask_lake_2023, levels=[0.5], colors='blue', linestyles='solid', linewidths=1)
-axs[0].contour(mask_glacier, levels=[0.5], colors='black', linestyles='solid', linewidths=1, alpha=0.7)
-axs[1].contour(mask_glacier, levels=[0.5], colors='black', linestyles='solid', linewidths=1, alpha=0.7)
-axs[2].contour(mask_glacier, levels=[0.5], colors='black', linestyles='solid', linewidths=1, alpha=0.7)
+axs[0].contour(mask_glacier_2004, levels=[0.5], colors='black', linestyles='solid', linewidths=1, alpha=0.7)
+axs[1].contour(mask_glacier_2015, levels=[0.5], colors='black', linestyles='solid', linewidths=1, alpha=0.7)
+axs[2].contour(mask_glacier_2015, levels=[0.5], colors='black', linestyles='solid', linewidths=1, alpha=0.7)
 axs[0].set_title("Lake Area 2004")
 axs[1].set_title("Lake Area 2015")
 axs[2].set_title("Lake Area 2023")
@@ -203,26 +218,25 @@ axs[0].set_ylabel("# Cells")
 axs[0].set_xlabel("# Cells")
 axs[1].set_xlabel("# Cells")
 axs[2].set_xlabel("# Cells")
-fig.colorbar(im6, ax=axs, orientation='vertical', label="Lake depth [m]", shrink=1.0)
-fig.colorbar(im3, ax=axs, orientation='vertical', label="Elevation around lake area [m]",  shrink=1.0)
-plt.savefig("Glaciology2/plots/lake_depth.png", dpi=300)
+fig.colorbar(im6, ax=axs, orientation='vertical', label="Lake depth [m]", shrink=0.5)
+fig.colorbar(im3, ax=axs, orientation='vertical', label="Elevation around lake area [m a.s.l.]", shrink=0.5)
+plt.savefig("plots/lake_depth.png", dpi=300)
 plt.show()
 
 
 # for plotting: remove cells that should not be plotted
 dem_thinning_rate[mask_glacier_2015 == 0] = np.nan
-lake_2004[mask_glacier_2015 == 1] = np.nan
 
 # Plot Glacial thinning 
-plt.imshow(dem_thinning_rate, cmap="Blues_r")
-plt.contour(mask_lake_2023, levels=[0.5], colors='blue', linestyles='solid', linewidths=1)
+fig2 = plt.imshow(dem_thinning_rate, cmap="Blues_r")
+plt.contour(mask_lake_2015, levels=[0.5], colors='blue', linestyles='solid', linewidths=1)
 plt.contour(mask_glacier_2015, levels=[0.5], colors='black', linestyles='solid', linewidths=1)
-plt.contourf(lake_2004, colors="white", hatches=["..."], alpha=0)
+plt.contourf(dem_elev_diff_2015, colors="white", hatches=["..."], alpha=0)
 plt.title("Glacier elevation change 2015-2023")
 plt.ylabel("# Cells")
 plt.xlabel("# Cells")
 plt.colorbar(fig2, orientation='vertical', label="Average thinning rate [m/yr]")
-plt.savefig("Glaciology2/plots/thinning_rate.png", dpi=300)
+plt.savefig("plots/thinning_rate.png", dpi=300)
 plt.show()
 
 
@@ -232,9 +246,9 @@ cmap_terrain = matplotlib.colors.LinearSegmentedColormap.from_list("", ["greenye
 im1 = axs[0].imshow(lake_2024, cmap=cmap_terrain, alpha=0.8, vmin= 2400, vmax = 2850)
 im2 = axs[1].imshow(lake_2027, cmap=cmap_terrain, alpha=0.8, vmin= 2400, vmax = 2850)
 im3 = axs[2].imshow(lake_2032, cmap=cmap_terrain, alpha=0.8, vmin= 2400, vmax = 2850)
-axs[0].contourf(lake_2004, colors="white", hatches=["..."], alpha=0) # hatching of rock area
-axs[1].contourf(lake_2004, colors="white", hatches=["..."], alpha=0)
-axs[2].contourf(lake_2004, colors="white", hatches=["..."], alpha=0)
+axs[0].contourf(dem_elev_diff_2015, colors="white", hatches=["..."], alpha=0) # hatching of rock area
+axs[1].contourf(dem_elev_diff_2015, colors="white", hatches=["..."], alpha=0)
+axs[2].contourf(dem_elev_diff_2015, colors="white", hatches=["..."], alpha=0)
 im4 = axs[0].imshow(dem_lake_depth_2024, cmap="Blues_r", vmin= -65, vmax = 0) # adjust all grids to use the same colorbar
 im5 = axs[1].imshow(dem_lake_depth_2027, cmap="Blues_r", vmin= -65, vmax = 0)
 im6 = axs[2].imshow(dem_lake_depth_2032, cmap="Blues_r", vmin= -65, vmax = 0)
@@ -251,10 +265,23 @@ axs[0].set_ylabel("# Cells")
 axs[0].set_xlabel("# Cells")
 axs[1].set_xlabel("# Cells")
 axs[2].set_xlabel("# Cells")
-fig.colorbar(im6, ax=axs, orientation='vertical', label="Lake depth [m]")
-fig.colorbar(im3, ax=axs, orientation='vertical', label="Elevation around lake area [m]")
-plt.savefig("Glaciology2/plots/predicted_lakes.png", dpi=300)
+fig.colorbar(im6, ax=axs, orientation='vertical', label="Lake depth [m]", shrink=0.5)
+fig.colorbar(im3, ax=axs, orientation='vertical', label="Elevation around lake area [m a.s.l.]", shrink=0.5)
+plt.savefig("plots/predicted_lakes.png", dpi=300)
 plt.show()
+
+
+# Plot Volume-Discharge datapoints and fitted Clague mathews curve
+plt.scatter(Vol, Qmax, label="Measured Peak Discharge")
+plt.plot(x_model, y_model, "y", label="Clague-Mathews Modeled Peak Discharge")
+plt.yscale("log")
+plt.xscale("log")
+plt.title("Lake Volume – Peak Flow Relationship")
+plt.xlabel("Lake Volume (10$^6$ m$^3$)")
+plt.ylabel("Peak Lake Discharge (m$^3$ s$^-$$^1$)")
+plt.savefig("plots/clague_mathews_model.png", dpi=300)
+plt.show()
+
 
 
 print("-"*8, "RESULTS", "-"*8)
@@ -269,6 +296,13 @@ print()
 print("Predicted Lake Volume 2024: ", v_lake_2024, "*10^6 m3")
 print("Predicted Lake Volume 2027: ", v_lake_2027, "*10^6 m3")
 print("Predicted Lake Volume 2032: ", v_lake_2032, "*10^6 m3")
+print()
+print("Ideal fitted k for Clague-Mathews relationship: ", round(k_opt[0], 4), "m s-1")
+print()
+print("Predicted peak discharge for the future lake volume")
+print("2024:", Q_future[0])
+print("2027:", Q_future[1])
+print("2032:", Q_future[2])
 print("-"*25)
 
 print()

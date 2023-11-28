@@ -1,9 +1,4 @@
-# Glacier flow-speed data 
-# 
-# time  = time since beginning of the measurements (d)
-# speed = measured ice flow speed (m/d)
-# 
-    time   speed 
+time   speed 
 5586.00   0.056 
 5586.25   0.051 
 5586.50   0.054 
